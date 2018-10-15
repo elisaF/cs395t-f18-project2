@@ -15,3 +15,11 @@
 * Edit the batch runner `wiki_batch_0x` for the `.bz` wiki file to be parsed (to parse `wiki_08.bz`, for instance, replace all the 00's in the file with 08). Also edit the email to yours to receive status report.
 * Run `sbatch wiki_batch_0x` (00 to 18).
 * To check the status of your job with `showq -u`.
+
+## Wikipedia Job Assignments
+
+* Su: 00 to 07 (8 files in total)
+* Elisa: 08 to 13 (6 files in total)
+* Brahma: 14 to 18 (5 files in total)
+
+**NB**: the jobs should be run in `gpu-long` for 72 hours. The max capacity on Maverick is 8 jobs for each user. 
