@@ -16,6 +16,8 @@
 * Run `sbatch wiki_batch_0x` (00 to 18).
 * To check the status of your job with `showq -u`.
 
+**NB**: replace the `UT-DEFT` in the line `SBATCH -A ...` to `cs395t-f18`. I'm running UT-DEFT because I'm funded through that project.
+
 ## Wikipedia Job Assignments
 
 * Su: 00 to 07 (8 files in total)
