@@ -7,7 +7,7 @@
 
 ## Wikipedia Dump Preprocessing (TACC running instructions)
 
-* Put the following files under the same folder (the last two files are in the [drive](https://drive.google.com/open?id=132FGfmOHtORnHjSVWL9WocoRFEwFocm0)
+* Put the following files under the same folder (the last two files are in the [drive](https://drive.google.com/open?id=132FGfmOHtORnHjSVWL9WocoRFEwFocm0))
   * `wiki_event_extraction.py`
   * `wiki_batch_0x` (00 to 18)
   * `engmalt.linear-1.7.mco`
