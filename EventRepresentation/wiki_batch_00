@@ -1,0 +1,35 @@
+#!/bin/bash
+#----------------------------------------------------
+# Example SLURM job script to run multiple mpi
+# applications within one batch job on TACC's
+# Stampede system.
+#----------------------------------------------------
+#SBATCH -J wiki-00     # Job name
+#SBATCH -o wiki-00.%j.out # Name of stdout output file(%j expands to jobId)
+#SBATCH -e wiki-00.%j.err # Name of stderr output file(%j expands to jobId)
+#SBATCH -p gpu-long          # Submit to the 'gpu' or 'vis' queue. What's the difference? Read the maverick docs.
+#SBATCH -N 1                    # Total number of nodes requested (20 cores/node)
+#SBATCH -n 20                   # Total number of mpi tasks requested. I believe must be a multiple of the number of total cores per node (20 for maverick).
+#SBATCH -t 72:00:00             # Run time (hh:mm:ss) - 4 hours
+#SBATCH --mail-user=shrekwang@utexas.edu
+#SBATCH --mail-type=end
+# The next line is required if the user has more than one project
+#SBATCH -A UT-DEFT # You will see the allotment name when you first log in
+#<200b>
+module load gcc/4.9.3  cuda/8.0  cudnn/5.1 python3/3.5.2
+python3 -u /work/04233/sw33286/Fall2018-CS395T/Project2/Code/EventRepresentation/wiki_event_extraction.py \
+  --wiki_bz2_file_path=/work/01813/roller/maverick/corpora/docperline/enwiki20150515/wiki_00.bz2 \
+  --document_file_path=/work/04233/sw33286/Fall2018-CS395T/Project2/Code/EventRepresentation/document-temp_00.txt \
+  --ollie_file_path=/work/04233/sw33286/Fall2018-CS395T/Project2/Code/EventRepresentation/ollie-temp_00.txt \
+  --target_file_path=/work/04233/sw33286/Fall2018-CS395T/Project2/Code/EventRepresentation/wiki_event_00.txt \
+  --print_every=100
+#<200b>
+# parallel processing applications need to be called through ibrun. 
+# -n is the number of cores the program needs. -o is the offset, e.g. tells which cores to use
+# The first line lets the program use cores 0-9, the second line lets the program use cores 10-34. Note that I haven't assigned cores 35-39.
+#ibrun -n 10 -o 0 python parallel_proc_program.py 
+#ibrun -n 25 -o 10 python parallel_proc_program.py 
+
+#Wait for all the applications to finish
+#This is important for parallel processing applications
+#wait
