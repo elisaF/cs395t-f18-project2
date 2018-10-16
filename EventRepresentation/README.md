@@ -4,6 +4,7 @@
 
 * Paper: [Weber et al. (2018). Event Representations with Tensor-based Compositions](https://arxiv.org/pdf/1711.07611.pdf)
 * PyTorch version: 0.4.0
+* To run, configure the paths in `run_rtf_net.sh` and run the script. NB: place the glove `.txt` file in the same folder as all the `.py` scripts. Go to this [site](https://nlp.stanford.edu/projects/glove/) to download glove embeddings (download `glove.6B.zip`). 
 
 ## Wikipedia Dump Preprocessing (TACC running instructions)
 
