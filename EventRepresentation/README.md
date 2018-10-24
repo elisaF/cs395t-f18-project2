@@ -21,8 +21,6 @@
 
 ## Wikipedia Job Assignments
 
-* Su: 00 to 07 (8 files in total)
-* Elisa: 08 to 13 (6 files in total)
-* Brahma: 14 to 18 (5 files in total)
+* Su: 00 to 15 (16 files in total)
 
 **NB**: the jobs should be run in `gpu-long` for 72 hours. The max capacity on Maverick is 8 jobs for each user. 
