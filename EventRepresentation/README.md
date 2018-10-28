@@ -23,4 +23,5 @@
 
 * Su: 00 to 15 (16 files in total)
 
+**NB**: the scripts are for Maverick, not Maverick2!
 **NB**: the jobs should be run in `gpu-long` for 72 hours. The max capacity on Maverick is 8 jobs for each user. 
