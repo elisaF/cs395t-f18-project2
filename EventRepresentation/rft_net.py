@@ -16,7 +16,6 @@ from torch.autograd import Variable as Var
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from util import *
 
 CUDA = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -290,14 +289,28 @@ if __name__ == "__main__":
     parser.add_argument("--trained_embedder_file", type=str)
     parser.add_argument("--rft_save_file", type=str)
     parser.add_argument("--embedder_save_file", type=str)
-    parser.add_argument("--indexer_save_file", type=str)
+    parser.add_argument("--indexer_and_bound_file", type=str)
     args = parser.parse_args()    
     
-    indexer = Indexer()
-    train_document_bounds = read_event_file(indexer, args.train_event_file_path)
-    valid_document_bounds = read_event_file(indexer, args.train_event_file_path)
-    dill.dump(indexer, open(args.indexer_save_file, "wb"))
-    print("Word indexer prepared and saved to:", args.indexer_save_file)
+    if torch.cuda.is_available():
+        print("CUDA available")
+    else:
+        print("CUDA is NOT available")
+        raise Exception
+
+    if os.path.exists(args.indexer_and_bound_file):
+        indexer, train_document_bounds, \
+        valid_document_bounds = dill.load(open(args.indexer_and_bound_file, "rb"))
+        print("Word indexer and bounds loaded from `" + \
+              str(args.indexer_and_bound_file) + "`")
+    else:
+        indexer = Indexer()
+        train_document_bounds = read_event_file(indexer, args.train_event_file_path)
+        valid_document_bounds = read_event_file(indexer, args.valid_event_file_path)
+        dill.dump((indexer, train_document_bounds, valid_document_bounds),
+                  open(args.indexer_and_bound_file, "wb"))
+        print("Word indexer prepared and saved to `" + \
+              args.indexer_and_bound_file + "`")
     glove_init = load_glove(args.glove_file_path, indexer, args.embedding_size)
     rft_net, embedder = train(train_event_file_path=args.train_event_file_path, 
                               valid_event_file_path=args.valid_event_file_path,

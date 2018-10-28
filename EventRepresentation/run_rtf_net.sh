@@ -16,4 +16,4 @@ python3 rft_net.py \
   --print_every=100 \
   --rft_save_file=/home/jacobsuwang/Documents/UTA/Fall2018/CS395T/Project2/EventExtraction/SavedModels/rft-test.ckpt \
   --embedder_save_file=/home/jacobsuwang/Documents/UTA/Fall2018/CS395T/Project2/EventExtraction/SavedModels/embedder-test.ckpt \
-  --indexer_save_file=/home/jacobsuwang/Documents/UTA/Fall2018/CS395T/Project2/EventExtraction/SavedModels/indexer-test.p
+  --indexer_and_bound_file=/home/jacobsuwang/Documents/UTA/Fall2018/CS395T/Project2/EventExtraction/SavedModels/indexer-and-bound-test.p

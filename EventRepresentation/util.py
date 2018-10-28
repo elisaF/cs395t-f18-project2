@@ -98,7 +98,8 @@ def read_event_file(indexer, event_file_path):
         for i, line in enumerate(event_file):
             if line == "\n":
                 right_bound = i + 1 # python indexes from 0, linecase from 1.
-                document_bounds.append((left_bound, right_bound))
+                if left_bound < right_bound:
+                    document_bounds.append((left_bound, right_bound))
                 left_bound = right_bound + 1
             else:
                 [indexer.get_index(item, count=True) 
