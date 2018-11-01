@@ -154,15 +154,15 @@ def run_epoch(batches, model, indexer, data_iterator,
         number_tokens += batch.number_tokens
         if i != 0 and i % print_every == 0:
             random_predict(model, indexer, data_iterator)
-            elapsed = time.time() - start         
-            print("%s Step: %d Loss: %f | Tokens per Sec: %f (total time = %.2f)" %
+            elapsed = time.time() - start
+            print("%s Step: %d Loss: %.2f | Tokens per Sec: %.2f (total time = %.2f)\n" %
                   (data_group, i, 
-                   loss / batch.number_tokens.type("torch.FloatTensor"), 
-                   number_tokens.type("torch.FloatTensor") / elapsed, 
+                   loss / batch.number_tokens.float(), 
+                   number_tokens / elapsed, 
                    time.time()-start))
             start = time.time()
             number_tokens = 0
-    return total_loss / total_tokens.type("torch.FloatTensor")
+    return total_loss / total_tokens.float()
 
 
 def greedy_decode(model, source, source_mask, max_length, start_symbol):
@@ -443,5 +443,4 @@ if __name__ == "__main__":
           saved_model=args.saved_model,
           model_name=args.model_name,
           validate=args.validate)
-    
     

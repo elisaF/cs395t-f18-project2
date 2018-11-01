@@ -541,7 +541,7 @@ class LabelSmoothing(nn.Module):
         assert prediction.size(1) == self.size
         true_distance = prediction.data.clone()
         true_distance.fill_(self.smoothing / (self.size - 2))
-        true_distance.scatter_(1, target.data.unsqueeze(1).type("torch.LongTensor"), 
+        true_distance.scatter_(1, target.long().data.unsqueeze(1), 
                                self.confidence)
         true_distance[:, self.padding_index] = 0
         mask = torch.nonzero(target.data == self.padding_index)
@@ -599,7 +599,6 @@ class SimpleLossCompute:
         # Apply final layer: <batch-size, seq-length, embed-size> 
         #                 -> <batch-size, seq-length, vocab-size>
         prediction = self.generator(outputs)
-        norm = norm.type("torch.FloatTensor")
         # Shape changes:
         #   prediction: <batch-size, seq-length, vocab-size> 
         #            -> <batch-size*seq-length, vocab-size>
@@ -607,10 +606,10 @@ class SimpleLossCompute:
         #        -> <batch-size*seq-length,>
         # NB: criterion requires both to be of type torch.FloatTensor.
         prediction = prediction.contiguous().view(-1, prediction.size(-1))
-        target = target.type("torch.FloatTensor").contiguous().view(-1)
-        loss = self.criterion(prediction, target) / norm
+        target = target.contiguous().view(-1)
+        loss = self.criterion(prediction, target.float()) / norm.float()
         loss.backward()
         if self.noam_opt is not None:
             self.noam_opt.step()
             self.noam_opt.optimizer.zero_grad()
-        return loss.item() * norm
+        return loss.float().item() * norm.float()
