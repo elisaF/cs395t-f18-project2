@@ -14,3 +14,7 @@
 * Place a folder `Glove/` as the same folder as the `.py` scripts, which should contain a download glove `.txt` file ([download link](https://nlp.stanford.edu/projects/glove/)).
 * To run: `sh run_trainer.sh` with desired configs.
 
+### Variant 1. + Linear Context
+
+### Variant 2. + LSTM Context
+
