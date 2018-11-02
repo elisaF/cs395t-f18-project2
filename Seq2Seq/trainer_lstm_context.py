@@ -1,4 +1,4 @@
-"""Implementing training routine for linear-context Transformer, based on (Vaswani/17).
+"""Implementing training routine for LSTM-context Transformer, based on (Vaswani/17).
 
 Authors: Sasha Rush; Su Wang.
 """
@@ -6,7 +6,7 @@ Authors: Sasha Rush; Su Wang.
 import argparse
 import copy
 import dill
-from loader_linear_context import *
+from loader_lstm_context import *
 import math
 import numpy as np
 import os
@@ -16,29 +16,26 @@ import torch
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
-from transformer_linear_context import *
+from transformer_lstm_context import *
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class LinearContextBatch:
+class LSTMContextBatch:
     """Object for holding a batch of data with mask during training."""
     
-    def __init__(self, source, contexts, target=None, pad=0):
+    def __init__(self, source, context, target=None, pad=0):
         """
         Args:
-            source: shape = <batch-size, seq-length>.
-            contexts: a list where each element has the same shape as the source.
-            target: shape = <batch-size, seq-length>.
+            source: shape = <batch-size, encoder-seq-length>.
+            context: shape = <batch-size, context-seq-length>.
+            target: shape = <batch-size, decoder-seq-length>.
             pad: padding index.
         """
         self.source = source
         # Make mask: <batch-size, seq-length> -> <batch-size, 1, seq-length>
         self.source_mask = (source != pad).unsqueeze(-2)
-        self.contexts, self.context_masks = [], []
-        for i, context in enumerate(contexts):
-            self.contexts.append(context)
-            self.context_masks.append((context != pad).unsqueeze(-2))
+        self.context = context 
         if target is not None:
             self.target = target[:, :-1]  # cut the last column, 0 to -1
             self.target_y = target[:, 1:] # cut the first column, 1 to last
@@ -58,7 +55,7 @@ class LinearContextBatch:
         return target_mask
 
 
-def get_linear_context_batch(vocab_size, batch_size, number_batches, data_iterator):
+def get_lstm_context_batch(vocab_size, batch_size, number_batches, data_iterator):
     """Get a Batch() object for training.
     
     Args:
@@ -70,17 +67,14 @@ def get_linear_context_batch(vocab_size, batch_size, number_batches, data_iterat
         A Batch object.
     """
     for i in range(number_batches):
-        batch = data_iterator.random_batch(batch_size)
-        source, target = batch[0], batch[-1]
-        contexts = list(batch[1:-1])
-        source, target = source.to(DEVICE), target.to(DEVICE)
-        contexts = [context.to(DEVICE) for context in contexts]
-        yield LinearContextBatch(source, contexts, target, pad=0)
+        source, context, target = data_iterator.random_batch(batch_size)
+        source, context, target = source.to(DEVICE), context.to(DEVICE), target.to(DEVICE)
+        yield LSTMContextBatch(source, context, target, pad=0)
         
 
-def make_linear_context_model(source_vocab_size, target_vocab_size, 
-                              number_blocks, embed_size, upsample_size, 
-                              number_heads, dropout_rate, glove_init):
+def make_lstm_context_model(source_vocab_size, target_vocab_size, 
+                            number_blocks, embed_size, upsample_size, 
+                            number_heads, dropout_rate, glove_init):
     """Helper: Construct a model from hyperparameters.
     
     Args:
@@ -99,7 +93,7 @@ def make_linear_context_model(source_vocab_size, target_vocab_size,
     attention = MultiHeadedAttention(number_heads, embed_size)
     ffnn = PositionwiseFeedForward(embed_size, upsample_size, dropout_rate)
     position = PositionalEncoding(embed_size, dropout_rate)
-    model = LinearContextEncoderDecoder(
+    model = LSTMContextEncoderDecoder(
         Encoder(EncoderBlock(embed_size, 
                              deep_copy(attention), 
                              deep_copy(ffnn), 
@@ -117,7 +111,9 @@ def make_linear_context_model(source_vocab_size, target_vocab_size,
                       deep_copy(position)),
         Generator(embed_size, target_vocab_size),
         embed_size=embed_size,
-        context_size=4).to(DEVICE)
+        source_vocab_size=source_vocab_size,
+        glove_init=glove_init,
+        number_layers=2).to(DEVICE)
     for parameter in model.parameters():
         if parameter.dim() > 1:
             nn.init.xavier_uniform_(parameter)
@@ -150,8 +146,8 @@ def run_epoch(batches, model, indexer, data_iterator,
         #   source_mask: <batch-size, 1, seq-length>
         #   tgt_mask: <batch-size, seq-length, seq-length>
         # outputs: <batch-size, seq-length, embed-size>
-        outputs = model.forward(batch.source, batch.contexts, batch.target, 
-                                batch.source_mask, batch.context_masks, batch.target_mask)
+        outputs = model.forward(batch.source, batch.context, batch.target, 
+                                batch.source_mask, batch.target_mask)
         # Compute loss
         #   IN:
         #     outputs: <batch-size, seq-length=original-seq-length-1, embed-size>
@@ -175,15 +171,15 @@ def run_epoch(batches, model, indexer, data_iterator,
     return total_loss / total_tokens.float()
 
 
-def linear_context_greedy_decode(model, source, contexts, source_mask, context_masks,
-                                 max_length, start_symbol):
+def lstm_context_greedy_decode(model, source, context, source_mask, 
+                               max_length, start_symbol):
     """Decoding for the best prediction.
     
     Args:
         model: trained EncoderDecoder object.
-        source: torch.LongTensor, <batch-size=1, seq-length>.
-        contexts: a list of torch.LongTensor objects, each is of the same shape as `source`.
-        source_mask: same type as source, <batch-size=1, 1, seq-length>.
+        source: torch.LongTensor, <batch-size=1, encoder-seq-length>.
+        context: torch.LongTensor objects, <batch-size=1, context-seq-length>.
+        source_mask: same type as source, <batch-size=1, 1, encoder-seq-length>.
         context_masks: a list of torch.LongTensor, each has the same shape as `source_mask`.
         max_length: maximal decoding length.
         start_symbol: <s>.
@@ -191,10 +187,9 @@ def linear_context_greedy_decode(model, source, contexts, source_mask, context_m
         torch.LongTensor prediction, <batch-size=1, seq-length>.
     """
     encoded_source = model.encode(source, source_mask)
-    encoded_contexts = []
-    for context, context_mask in zip(contexts, context_masks):
-        encoded_contexts.append(model.encode(context, context_mask))
-    memory = model.linear(torch.cat([encoded_source] + encoded_contexts, dim=-1))
+    encoded_context = model.context_bilstm(context) # <batch-size, embed-size * number-layers * directions>
+    encoded_context = encoded_context.unsqueeze(1).repeat(1, encoded_source.size(1), 1)
+    memory = model.linear(torch.cat((encoded_source, encoded_context), dim=-1)) 
     predictions = torch.ones(1, 1).fill_(start_symbol).type_as(source.data)
     for i in range(max_length-1):
         outputs = model.decode(memory, source_mask, 
@@ -237,19 +232,13 @@ def random_predict(model, indexer, data_iterator, size=5):
     """
     print("Random predictions\n")
     for i in range(size):
-        batch = data_iterator.random_batch(1)
-        source, target = batch[0], batch[-1]
-        contexts = list(batch[1:-1])
-        source, target = source.to(DEVICE), target.to(DEVICE)
-        contexts = [context.to(DEVICE) for context in contexts]    
+        source, context, target = data_iterator.random_batch(1)
+        source, context, target = source.to(DEVICE), context.to(DEVICE), target.to(DEVICE)   
         # Make mask: <batch-size=1, 1, seq-length>
         source_mask = Variable(torch.ones(1, 1, source.size(1))).to(DEVICE)
-        context_masks = [Variable(torch.ones(1, 1, context.size(1))).to(DEVICE)
-                         for context in contexts]
-        prediction = linear_context_greedy_decode(model, source, contexts, 
-                                                  source_mask, context_masks, 
-                                                  max_length=target.size(1), 
-                                                  start_symbol=2)
+        prediction = lstm_context_greedy_decode(model, source, context, source_mask,  
+                                                max_length=target.size(1), 
+                                                start_symbol=2)
         source, prediction, target = [tensor_to_words(indexer, tensor) 
                                       for tensor in [source.data, prediction, target.data]]
         source = " ".join([token for token in source 
@@ -324,11 +313,11 @@ def train(data_dir, model_dir, indexer_dir, glove_path,
     valid_iterator = DataIterator(valid_source, valid_target,
                                   valid_context1, valid_context2, valid_context3, valid_context4,
                                   len(valid_source))
-    model = make_linear_context_model(source_vocab_size=vocab_size, 
-                                      target_vocab_size=vocab_size, 
-                                      number_blocks=number_blocks, embed_size=embed_size, 
-                                      upsample_size=upsample_size, number_heads=number_heads, 
-                                      dropout_rate=dropout_rate, glove_init=glove_init)
+    model = make_lstm_context_model(source_vocab_size=vocab_size, 
+                                    target_vocab_size=vocab_size, 
+                                    number_blocks=number_blocks, embed_size=embed_size, 
+                                    upsample_size=upsample_size, number_heads=number_heads, 
+                                    dropout_rate=dropout_rate, glove_init=glove_init)
     if saved_model is not None:
         model.load_state_dict(torch.load(saved_model))
         print("Loaded saved model:", saved_model)
@@ -344,9 +333,9 @@ def train(data_dir, model_dir, indexer_dir, glove_path,
     for epoch in range(number_epochs):
         print( "Epoch %d\n" % (epoch+1))
         model.train() # training mode, gradient flows.
-        train_loss = run_epoch(get_linear_context_batch(vocab_size, batch_size, 
-                                                        number_batches,
-                                                        data_iterator=train_iterator), 
+        train_loss = run_epoch(get_lstm_context_batch(vocab_size, batch_size, 
+                                                      number_batches,
+                                                      data_iterator=train_iterator), 
                                model, indexer, train_iterator,
                                SimpleLossCompute(model.generator, 
                                                  criterion, 
@@ -358,10 +347,10 @@ def train(data_dir, model_dir, indexer_dir, glove_path,
             print("\nRunning validation ...\n")
             model.eval() # evaluation model, gradient freezes.
             valid_losses = []
-            valid_loss = run_epoch(get_linear_context_batch(vocab_size, 
-                                                            batch_size, 
-                                                            number_batches,
-                                                            data_iterator=valid_iterator), 
+            valid_loss = run_epoch(get_lstm_context_batch(vocab_size, 
+                                                          batch_size, 
+                                                          number_batches,
+                                                          data_iterator=valid_iterator), 
                                    model, indexer, valid_iterator,
                                    SimpleLossCompute(model.generator, 
                                                      criterion, 
@@ -399,10 +388,10 @@ class TransformerRunner(object):
         self.indexer = dill.load(open(indexer_path, "rb"))
         vocab_size = self.indexer.size
         glove_init = load_glove(glove_path, self.indexer, embed_size)
-        self.model = make_linear_context_model(vocab_size, vocab_size, 
-                                               number_blocks, embed_size, 
-                                               upsample_size, number_heads, 
-                                               dropout_rate=0.0, glove_init=glove_init)
+        self.model = make_lstm_context_model(vocab_size, vocab_size, 
+                                             number_blocks, embed_size, 
+                                             upsample_size, number_heads, 
+                                             dropout_rate=0.0, glove_init=glove_init)
         self.model.load_state_dict(torch.load(model_path))
         self.model.eval()
         
@@ -425,16 +414,11 @@ class TransformerRunner(object):
             prediction: the predicted sentence as a string.
         """
         source = self.to_inputs(sentence).to(DEVICE)
-        contexts = [self.to_inputs(context_sentence).to(DEVICE) 
-                    for context_sentence in context_sentences]
+        context = self.to_inputs(" ".join(context_sentences)).to(DEVICE)
         # Make mask: shape = <batch-size, 1, seq-length>
-        source_mask = Variable(torch.ones(1, 1, source.size(1))).to(DEVICE)
-        context_masks = [Variable(torch.ones(1, 1, context.size(1))).to(DEVICE)
-                         for context in contexts]        
-        source, source_mask = source.to(DEVICE), source_mask.to(DEVICE)
-        prediction = linear_context_greedy_decode(self.model, source, contexts,
-                                                  source_mask, context_masks, 
-                                                  max_length, start_symbol=2) 
+        source_mask = Variable(torch.ones(1, 1, source.size(1))).to(DEVICE)   
+        prediction = lstm_context_greedy_decode(self.model, source, context, source_mask, 
+                                                max_length, start_symbol=2) 
         source, prediction = [tensor_to_words(self.indexer, tensor) 
                               for tensor in [source.data, prediction]]
         source = " ".join([token for token in source 

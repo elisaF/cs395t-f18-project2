@@ -1,4 +1,4 @@
-"""Implementing linear-context Transformer, based on (Vaswani/17) with complete annotations.
+"""Implementing LSTM-context Transformer, based on (Vaswani/17) with complete annotations.
 
 Code modified from `http://nlp.seas.harvard.edu/2018/04/03/attention.html`.
 
@@ -20,19 +20,63 @@ import torch.nn.functional as F
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class LinearContextEncoderDecoder(nn.Module):
-    """Standard Transformer encoder with context encoding.
+class ContextBiLSTM(nn.Module):
+    """BiLSTM context encoder."""
     
-    The context encoding treats every context sentence the same way as it
-    does with the source sentence. The multiple encodings are finally
-    concatenated and projected to the size of that of the source sentence
-    on its own.
+    def __init__(self, embed_size, source_vocab_size, 
+                 glove_init=None, number_layers=2):
+        """Initializer.
+        
+        Args:
+            embed_size: embeddings size.
+            source_vocab_size: source vocabulary size (it's not used on the decoder end).
+            glove_init: numpy.ndarray, initializing embeddings.
+            number_layers: number of layers in stacked BiLSTM.
+        """
+        super(ContextBiLSTM, self).__init__()
+        self.embed = Embeddings(embed_size, source_vocab_size, glove_init)
+        self.bilstm = nn.LSTM(input_size=embed_size, hidden_size=embed_size,
+                              num_layers=number_layers,
+                              batch_first=True, bidirectional=True)
+    
+    def forward(self, context):
+        """Forwarding.
+        
+        Args:
+            context: torch.LongTensor of shape <batch-size, seq-length>.
+        Returns:
+            context_states: <batch-size, embed-size * number-layers * directions>.
+        """
+        # Embedding: <batch-size, seq-length>
+        #         -> <batch-size, seq-length, embed-size>.
+        context_embedded = self.embed(context)
+        # Get BiLSTM final state (drop output/memory and final-c).
+        #   shape = <number-layers * directions, batch-size, embed/hidden_size>.
+        _, (context_states, _) = self.bilstm(context_embedded)
+        # Batch first: <number-layers * directions, batch-size, embed/hidden_size>
+        #           -> < batch-size, number-layers * directions, embed/hidden_size>
+        context_states = context_states.transpose(0, 1)
+        batch_size = context_states.size(0)
+        # Concatenate features from all layers and directions:
+        #    < batch-size, number-layers * directions, embed/hidden_size>
+        # -> < batch-size, number-layers * directions, embed/hidden_size>
+        context_states = context_states.reshape(batch_size, -1)
+        return context_states
+
+
+class LSTMContextEncoderDecoder(nn.Module):
+    """Standard Transformer encoder with LSTM context encoding.
+    
+    The context encoding treats context sentences as a sequence which
+    are concatenated (separated by START/END symbols). The sequence is 
+    then processed with a stacked BiLSTM. We take the final state (h)
+    as the context encoding.
     """
     
     def __init__(self, encoder, decoder, 
                  source_embed, target_embed, 
                  generator, 
-                 embed_size, context_size):
+                 embed_size, source_vocab_size, glove_init, number_layers):
         """
         Args:
             encoder: Encoder object.
@@ -42,39 +86,40 @@ class LinearContextEncoderDecoder(nn.Module):
             target_embed: same as `source_embed`, but for target sequence.
             generator: Generator object, final linear-softmax layer.
             embed_size: embedding size.
-            context_size: number of context inputs.
+            source_vocab_size: source vocabulary size (it's not used on the decoder end).
+            glove_init: numpy.ndarray, initializing embeddings.
+            number_layers: number of layers in stacked BiLSTM.
+            context_size: total dimensions of context embeddings.
         """
-        super(LinearContextEncoderDecoder, self).__init__()
+        super(LSTMContextEncoderDecoder, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.source_embed = source_embed
         self.target_embed = target_embed
         self.generator = generator
-        self.context_size = context_size
-        self.linear = nn.Linear(embed_size + embed_size * self.context_size,
-                                embed_size)
-        
-    def forward(self, source, contexts, target, 
-                source_mask, context_masks, target_mask):
+        self.context_bilstm = ContextBiLSTM(embed_size, source_vocab_size,
+                                            glove_init, number_layers)
+        self.linear = nn.Linear(embed_size + embed_size * number_layers * 2,
+                                embed_size) # 2: bidirectional.
+    
+    def forward(self, source, context, target, 
+                source_mask, target_mask):
         """Take in and process masked src and target sequences.
         
         Args:
             source: torch.LongTensor object, shape = <batch-size, encoder-seq-length>.
-            contexts: a list of torch.LongTensor objects, each is of the same shape as `source`.
+            context: torch.LongTensor objects, shape = <batch-size, context-seq-length>.
             target: same as `source`, shape = <batch-size, decoder-seq-length>.
             source_mask: torch.LongTensor, shape = <batch-size, 1, encoder-seq-length>.
-            context_masks: a list of torch.LongTensor, each has the same shape as `source_mask`.
             target_mask: same `source_mask`, shape = <batch-size, 1, decoder-seq-length>.
         Returns:
             decoder outputs of the shape <batch-size, decoder-seq-length, embed-size>.
         """
         encoded_source = self.encode(source, source_mask)
-        encoded_contexts = []
-        for context, context_mask in zip(contexts, context_masks):
-            encoded_contexts.append(self.encode(context, context_mask))
-        encoded = self.linear(torch.cat([encoded_source] + encoded_contexts, dim=-1))
-        return self.decode(encoded, 
-                           source_mask, target, target_mask)
+        encoded_context = self.context_bilstm(context) # <batch-size, embed-size * number-layers * directions>
+        encoded_context = encoded_context.unsqueeze(1).repeat(1, encoded_source.size(1), 1)
+        memory = self.linear(torch.cat((encoded_source, encoded_context), dim=-1))        
+        return self.decode(memory, source_mask, target, target_mask)
 
     def encode(self, source, source_mask):
         """
@@ -99,7 +144,9 @@ class LinearContextEncoderDecoder(nn.Module):
             Decoded hidden states of the shape <batch-size, decoder-seq-length, embed-size>.
         """
         return self.decoder(self.target_embed(target), memory, source_mask, target_mask)
-    
+
+#TODO: make changes below accordingly.    
+
     
 class Generator(nn.Module):
     """Define standard linear + softmax generation step."""

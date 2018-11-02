@@ -1,4 +1,4 @@
-"""Data preprocessing utils.
+"""Data preprocessing utils for base Transformer.
 
 Author: Su Wang
 """

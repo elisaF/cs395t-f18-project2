@@ -1,4 +1,4 @@
-"""Data preprocessing utils for linear-context variant of Transformer.
+"""Data preprocessing utils for LSTM-context variant of Transformer.
 
 Author: Su Wang
 """
@@ -202,7 +202,7 @@ class DataIterator:
         Args:
             index: integer index to retrieve sentence entry (list of indices).
             max_source_length: max length of source sequence.
-            max_context_length: max lenght of context sequences (apply to all).
+            max_context_length: max *total* lenght of context sequences (apply to all).
             max_target_length: max length of target sequence.
         Returns:
             source_padded: list of indices for a sentence, padded to given max length.
@@ -215,37 +215,25 @@ class DataIterator:
         context2_tokens = [self.start_symbol_index] + self.context2[index] + [self.end_symbol_index]
         context3_tokens = [self.start_symbol_index] + self.context3[index] + [self.end_symbol_index]
         context4_tokens = [self.start_symbol_index] + self.context4[index] + [self.end_symbol_index]
+        context_tokens = context1_tokens + context2_tokens + context3_tokens + context4_tokens
         target_tokens = [self.start_symbol_index] + self.target[index] + [self.end_symbol_index]
         source_length = len(source_tokens)
-        context1_length = len(context1_tokens)
-        context2_length = len(context2_tokens)
-        context3_length = len(context3_tokens)
-        context4_length = len(context4_tokens)
+        context_length = len(context_tokens)
         target_length = len(target_tokens)
         source_padded = source_tokens[:max_source_length-1]+[self.end_symbol_index] \
             if source_length > max_source_length \
-            else source_tokens+[self.pad_index]*(max_source_length-source_length)
-        context1_padded = context1_tokens[:max_context_length-1]+[self.end_symbol_index] \
-            if context1_length > max_context_length \
-            else context1_tokens+[self.pad_index]*(max_context_length-context1_length)
-        context2_padded = context2_tokens[:max_context_length-1]+[self.end_symbol_index] \
-            if context2_length > max_context_length \
-            else context2_tokens+[self.pad_index]*(max_context_length-context2_length)
-        context3_padded = context3_tokens[:max_context_length-1]+[self.end_symbol_index] \
-            if context3_length > max_context_length \
-            else context3_tokens+[self.pad_index]*(max_context_length-context3_length)
-        context4_padded = context4_tokens[:max_context_length-1]+[self.end_symbol_index] \
-            if context4_length > max_context_length \
-            else context4_tokens+[self.pad_index]*(max_context_length-context4_length)
+            else source_tokens+[self.pad_index]*(max_source_length-source_length)      
+        context_padded = context_tokens[:max_context_length-1]+[self.end_symbol_index] \
+            if context_length > max_context_length \
+            else context_tokens+[self.pad_index]*(max_context_length-context_length)
         target_padded = target_tokens[:max_target_length-1]+[self.end_symbol_index] \
             if target_length > max_target_length \
             else target_tokens+[self.pad_index]*(max_target_length-target_length)
-        return source_padded, \
-               context1_padded, context2_padded, context3_padded, context4_padded, \
+        return source_padded, context_padded, \
                target_padded, source_length
     
     def random_batch(self, batch_size, 
-                     max_source_length=20, max_context_length=20, max_target_length=20):
+                     max_source_length=20, max_context_length=80, max_target_length=20):
         """Randomly retrieve a batch of source-target sentence pairs in torch tensors.
         
         Args:
@@ -258,21 +246,15 @@ class DataIterator:
             batch_target: <batch-size, max-target-length> shaped target sentences.
         """
         batch_indices = np.random.choice(self.indices, size=batch_size, replace=False)
-        batch_source, batch_target = [], []
-        batch_context1, batch_context2, batch_context3, batch_context4 = [], [], [], []
+        batch_source, batch_context, batch_target = [], [], []
         batch_source_length = []
         for index in batch_indices:
-            source_padded, \
-            context1_padded, context2_padded, context3_padded, context4_padded, \
-            target_padded, \
-            source_length = self._pad_sentence(index, max_source_length,
-                                                      max_context_length,
-                                                      max_target_length)
+            source_padded, context_padded, \
+            target_padded, source_length = self._pad_sentence(index, max_source_length,
+                                                                     max_context_length,
+                                                                     max_target_length)
             batch_source.append(source_padded)
-            batch_context1.append(context1_padded)
-            batch_context2.append(context2_padded)
-            batch_context3.append(context3_padded)
-            batch_context4.append(context4_padded)
+            batch_context.append(context_padded)
             batch_target.append(target_padded)
             batch_source_length.append(source_length)
         # Sort batch items by the length of the source in descending (pytorch quirk).
@@ -282,11 +264,6 @@ class DataIterator:
                                                            reverse=True)]
         # Batch-major: <batch-size, seq-length>
         batch_source = Variable(torch.LongTensor(np.array(batch_source)[batch_indices]))
-        batch_context1 = Variable(torch.LongTensor(np.array(batch_context1)[batch_indices]))
-        batch_context2 = Variable(torch.LongTensor(np.array(batch_context2)[batch_indices]))
-        batch_context3 = Variable(torch.LongTensor(np.array(batch_context3)[batch_indices]))
-        batch_context4 = Variable(torch.LongTensor(np.array(batch_context4)[batch_indices]))
+        batch_context = Variable(torch.LongTensor(np.array(batch_context)[batch_indices]))
         batch_target = Variable(torch.LongTensor(np.array(batch_target)[batch_indices]))
-        return batch_source, \
-               batch_context1, batch_context2, batch_context3, batch_context4, \
-               batch_target
+        return batch_source, batch_context, batch_target
