@@ -16,5 +16,10 @@
 
 ### Variant 1. + Linear Context
 
+* The context encoding treats every context sentence the same way as it does with the source sentence. The multiple encodings are finally concatenated and projected to the size of that of the source sentence on its own.
+* Speed ~0.65x factors the base Transformer.
+
 ### Variant 2. + LSTM Context
 
+* The context encoding treats context sentences as a sequence which are concatenated (separated by START/END symbols). The sequence is then processed with a stacked BiLSTM. We take the final state (h) as the context encoding.
+* Speed ~0.05x factors the base Transformer.
